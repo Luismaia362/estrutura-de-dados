@@ -1,0 +1,113 @@
+
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import sqlite3
+
+app = Flask(__name__)
+CORS(app)
+
+conn = sqlite3.connect('mecanica.db', check_same_thread=False)
+cursor = conn.cursor()
+
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS onibus (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL,
+    prioridade TEXT NOT NULL,
+    facilidade TEXT NOT NULL,
+    status TEXT NOT NULL
+)
+''')
+
+conn.commit()
+
+fila = []
+historico = []
+
+@app.route('/onibus', methods=['GET'])
+def listar_onibus():
+    cursor.execute('SELECT * FROM onibus')
+    dados = cursor.fetchall()
+
+    resultado = []
+
+    for item in dados:
+        resultado.append({
+            'id': item[0],
+            'nome': item[1],
+            'prioridade': item[2],
+            'facilidade': item[3],
+            'status': item[4]
+        })
+
+    return jsonify(resultado)
+
+@app.route('/onibus', methods=['POST'])
+def cadastrar_onibus():
+    dados = request.json
+
+    novo = {
+        'nome': dados['nome'],
+        'prioridade': dados['prioridade'],
+        'facilidade': dados['facilidade']
+    }
+
+    fila.append(novo)
+
+    cursor.execute(
+        'INSERT INTO onibus (nome, prioridade, facilidade, status) VALUES (?, ?, ?, ?)',
+        (
+            dados['nome'],
+            dados['prioridade'],
+            dados['facilidade'],
+            'Aguardando'
+        )
+    )
+
+    conn.commit()
+
+    return jsonify({'mensagem': 'Ônibus cadastrado com sucesso'})
+
+@app.route('/historico/<int:id>', methods=['POST'])
+def adicionar_historico(id):
+    cursor.execute('SELECT * FROM onibus WHERE id = ?', (id,))
+    item = cursor.fetchone()
+
+    if item:
+        historico.append({
+            'id': item[0],
+            'nome': item[1],
+            'prioridade': item[2],
+            'facilidade': item[3],
+            'status': item[4]
+        })
+
+        return jsonify({'mensagem': 'Ônibus adicionado à pilha'})
+
+    return jsonify({'erro': 'Ônibus não encontrado'})
+
+@app.route('/historico/desfazer', methods=['POST'])
+def desfazer():
+    if len(historico) == 0:
+        return jsonify({'erro': 'Pilha vazia'})
+
+    ultimo = historico.pop()
+
+    return jsonify({
+        'mensagem': 'Último atendimento desfeito',
+        'onibus': ultimo
+    })
+
+@app.route('/historico', methods=['GET'])
+def listar_historico():
+    return jsonify(historico)
+
+@app.route('/onibus/<int:id>', methods=['DELETE'])
+def remover_onibus(id):
+    cursor.execute('DELETE FROM onibus WHERE id = ?', (id,))
+    conn.commit()
+
+    return jsonify({'mensagem': 'Ônibus removido'})
+
+if __name__ == '__main__':
+    app.run(debug=True)
